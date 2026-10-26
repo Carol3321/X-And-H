@@ -1058,6 +1058,8 @@ function setupEvents() {
   });
 }
 
+
+
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.1);
@@ -1072,9 +1074,14 @@ function animate() {
   composer.render();
   // 照片叠加层：后处理完成后直接画在画布上，保证照片是原图颜色
   if (overlayPhotoMesh) {
+    // scene.background 是纯色时 three 会强制清屏，必须连 autoClearColor 一起关，
+    // 否则这一帧会把后处理结果（背景里的散开粒子）整块擦黑
+    const prevClearColor = renderer.autoClearColor;
     renderer.autoClear = false;
+    renderer.autoClearColor = false;
     renderer.clearDepth();
     renderer.render(scene, photoCamera);
+    renderer.autoClearColor = prevClearColor;
     renderer.autoClear = true;
   }
 }
