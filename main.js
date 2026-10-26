@@ -44,6 +44,14 @@ async function init() {
   setupPostProcessing();
   setupEvents();
   cacheUi();
+
+  // 识别模型立刻开始下载（不等摄像头授权），和场景加载并行
+  startModelLoad().catch((err) => console.warn('模型预热失败:', err));
+  // 第二次打开时模型直接走缓存（8MB 的包下载一次就够）
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+
   await Promise.all([
     Promise.race([
       initMediaPipe(),
@@ -622,26 +630,66 @@ async function initMediaPipe() {
     setHintText(cameraErrorText(err));
     return;
   }
-
-  // 3) 再加载手部模型（失败也不影响看摄像头画面）
+  // 3) 模型在页面打开时就已经开始下载了，这里只等它
   try {
-    const vision = await FilesetResolver.forVisionTasks("assets/wasm");
-    handLandmarker = await HandLandmarker.createFromOptions(vision, {
+    handLandmarker = await modelReady;
+  } catch (err) {
+    console.warn('手部模型加载失败:', err);
+    setHintText('⚠ 手部模型加载失败，摄像头正常但没有手势识别');
+  }
+}
+
+/**
+ * 页面一打开就开始拉识别模型（不等摄像头授权），
+ * 并把下载进度显示在底部提示里——16MB 的包在慢网下要几分钟，
+ * 没有进度条会被当成卡死。
+ */
+let modelReady = null;
+function startModelLoad() {
+  if (modelReady) return modelReady;
+  const WASM_BASE = 'assets/wasm';
+  const MODEL_URL = './assets/hand_landmarker.task';
+
+  const visionReady = FilesetResolver.forVisionTasks(WASM_BASE);
+  const modelBlob = fetchWithProgress(MODEL_URL, (got) => {
+    setHintText(`识别模型下载中 ${(got / 1048576).toFixed(1)} MB…`, false);
+  });
+
+  modelReady = (async () => {
+    const [vision, blob] = await Promise.all([visionReady, modelBlob]);
+    setHintText('识别模型初始化中…', false);
+    return HandLandmarker.createFromOptions(vision, {
       baseOptions: {
-        modelAssetPath: "./assets/hand_landmarker.task",
-        delegate: "GPU"
+        modelAssetPath: URL.createObjectURL(blob),
+        delegate: 'GPU'
       },
-      runningMode: "VIDEO",
+      runningMode: 'VIDEO',
       numHands: 1,
       // 用 MediaPipe 默认阈值（0.5）：更宽容，暗光/手偏一点也能跟住
       minHandDetectionConfidence: 0.5,
       minHandPresenceConfidence: 0.5,
       minTrackingConfidence: 0.5
     });
-  } catch (err) {
-    console.warn('手部模型加载失败:', err);
-    setHintText('⚠ 手部模型加载失败，摄像头正常但没有手势识别');
+  })();
+  return modelReady;
+}
+
+/** 边下边报进度；content-length 是压缩后的大小，所以只报"已下载多少"不报百分比 */
+async function fetchWithProgress(url, onProgress) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`模型下载失败 HTTP ${res.status}`);
+  if (!res.body || !res.body.getReader) return res.blob();
+  const reader = res.body.getReader();
+  const chunks = [];
+  let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    got += value.length;
+    if (onProgress) onProgress(got);
   }
+  return new Blob(chunks, { type: 'application/octet-stream' });
 }
 
 let lastVideoTime = -1;
