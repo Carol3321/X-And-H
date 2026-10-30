@@ -49,7 +49,11 @@ async function init() {
   // 缩略图优先，模型最多等 12 秒再开始下。
   const galleryDone = loadGallery();
   setTimeout(() => startModelLoad().catch((err) => console.warn('模型预热失败:', err)), 12000);
-  galleryDone.finally(() => startModelLoad().catch((err) => console.warn('模型预热失败:', err)));
+  // 相册一到位就同时开始：模型下载 + 全部原图后台预下载
+  galleryDone.finally(() => {
+    startModelLoad().catch((err) => console.warn('模型预热失败:', err));
+    setTimeout(startOriginalPrefetch, 3000);
+  });
 
   // 第二次打开时模型/缩略图直接走缓存
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
@@ -746,6 +750,37 @@ async function initMediaPipe() {
 }
 
 /**
+ * 按顺序把 100 张原图拉下来塞进缓存。慢，但只需要一次；
+ * 下完以后点任意一张都是秒出原图。
+ */
+let prefetchRunning = false;
+async function startOriginalPrefetch() {
+  if (prefetchRunning || !('caches' in window)) return;
+  prefetchRunning = true;
+  const list = photoList();
+  if (!list.some((p) => p.origUrl)) return;   // 没有原图素材就不跑
+  STATE.prefetchTotal = list.length;
+  STATE.prefetchDone = 0;
+  for (const p of list) {
+    if (!p.origUrl) { STATE.prefetchDone++; continue; }
+    try {
+      const cache = await caches.open('mp-assets-v2');
+      if (!(await cache.match(p.origUrl))) {
+        const res = await fetch(p.origUrl);
+        if (res.ok) await cache.put(p.origUrl, res.clone());
+      }
+    } catch (e) {
+      // 单张失败不影响整体，下次打开会再试
+    }
+    STATE.prefetchDone++;
+    updateHud(lastPose, true);
+  }
+  prefetchRunning = false;
+  STATE.prefetchDone = STATE.prefetchTotal;
+  updateHud(lastPose, true);
+}
+
+/**
  * 页面一打开就开始拉识别模型（不等摄像头授权），
  * 并把下载进度显示在底部提示里——16MB 的包在慢网下要几分钟，
  * 没有进度条会被当成卡死。
@@ -772,7 +807,7 @@ function startModelLoad() {
 
   modelReady = (async () => {
     const [vision, blob] = await Promise.all([visionReady, modelBlob]);
-    setHintText('识别模型已下载完 · 正在启动识别引擎…', false);
+    setHintText('识别模型已下载完 · 正在启动识别引擎（约 10 秒）…', false);
     return HandLandmarker.createFromOptions(vision, {
       baseOptions: {
         modelAssetPath: URL.createObjectURL(blob),
@@ -1107,6 +1142,10 @@ function updateHud(ev, force = false) {
         : '';
       ui.mode.textContent = `🖼 照片 ${info.index + 1} / ${info.total}${extra} · 捏合或 ↑↓ 翻页`;
       ui.mode.dataset.state = ev.visible ? ev.label : 'NONE';
+    } else if (STATE.prefetchTotal && STATE.prefetchDone < STATE.prefetchTotal) {
+      const pct = Math.round((STATE.prefetchDone / STATE.prefetchTotal) * 100);
+      ui.mode.textContent = `原图预下载 ${STATE.prefetchDone} / ${STATE.prefetchTotal}（${pct}%）· 下完点开就是原图`;
+      ui.mode.dataset.state = 'NONE';
     } else if (ev.visible) {
       ui.mode.textContent = MODE_TEXT[ev.mode] || MODE_TEXT.IDLE;
       ui.mode.dataset.state = ev.label;

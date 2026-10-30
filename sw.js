@@ -11,7 +11,8 @@ self.addEventListener('fetch', (e) => {
     url.pathname.includes('/assets/wasm/') ||
     url.pathname.endsWith('hand_landmarker.task') ||
     url.pathname.includes('/assets/photos/thumb/') ||
-    url.pathname.includes('/assets/photos/mid/');
+    url.pathname.includes('/assets/photos/mid/') ||
+    url.pathname.includes('/assets/photos/orig/');
   if (!hit) return;
 
   e.respondWith((async () => {
