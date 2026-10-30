@@ -503,21 +503,27 @@ function loadFullTexture(p) {
   if (!p || !p.fullUrl) return Promise.resolve(null);
   if (p.fullTexture) return Promise.resolve(p.fullTexture);
   if (p.fullPromise) return p.fullPromise;
-  p.fullPromise = new Promise((resolve) => {
-    fullLoader.load(
-      p.fullUrl,
-      (tex) => {
-        tex.colorSpace = THREE.SRGBColorSpace;
-        tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-        p.fullTexture = tex;
-        p.fullPromise = null;
-        touchFullCache(p);
-        resolve(tex);
-      },
-      undefined,
-      () => { p.fullPromise = null; resolve(null); }
-    );
-  });
+  // 用 fetch 取字节再交给 TextureLoader：Image 那条路在代理/慢网下会静默失败且没有超时
+  p.fullPromise = (async () => {
+    try {
+      const res = await fetch(p.fullUrl);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const tex = await fullLoader.loadAsync(url);
+      URL.revokeObjectURL(url);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      p.fullTexture = tex;
+      touchFullCache(p);
+      return tex;
+    } catch (e) {
+      console.warn('大图加载失败:', p.fullUrl, e);
+      return null;
+    } finally {
+      p.fullPromise = null;
+    }
+  })();
   return p.fullPromise;
 }
 
