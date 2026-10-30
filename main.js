@@ -423,7 +423,7 @@ async function loadGallery() {
     await Promise.all(
       Array.from({ length: Math.min(4, slots.length) }, worker)
     );
-    console.log(`相册：已加载 ${ok}/${slots.length} 张`, 'orig0=', slots[0] && slots[0].origUrl);
+    console.log(`相册：已加载 ${ok}/${slots.length} 张`);
     applyDebugMode();
     applyDebugPhoto();
   } catch (err) {
@@ -587,11 +587,13 @@ function ensureFullTexture(mesh) {
     loadMidTexture(p).then((mid) => {
       if (mid && !p.fullTexture && !p.origTexture) applyTextureToParticle(p, mid);
     });
+    // 原图和大图并行：之前是等大图下完才开始下载原图，
+    // 慢网下大图又排在 100 张缩略图后面，结果永远等不到
+    loadOriginalTexture(p);
     loadFullTexture(p).then((tex) => {
       if (!tex) return;
       if (!p.origTexture) applyTextureToParticle(p, tex);
       if (p.midTexture) { p.midTexture.dispose(); p.midTexture = null; }
-      loadOriginalTexture(p);
     });
   }
 
@@ -614,7 +616,7 @@ function ensureFullTexture(mesh) {
  */
 const origLoader = new THREE.TextureLoader();
 function loadOriginalTexture(p) {
-  if (!p || !p.origUrl || p.origTexture || p.origPromise) { console.log('[dbg] orig skip', !!p, p && p.origUrl); return; }
+  if (!p || !p.origUrl || p.origTexture || p.origPromise) return;
   p.origPromise = (async () => {
     try {
       const r = await fetch(p.origUrl);
