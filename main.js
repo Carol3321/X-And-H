@@ -423,7 +423,7 @@ async function loadGallery() {
     await Promise.all(
       Array.from({ length: Math.min(4, slots.length) }, worker)
     );
-    console.log(`相册：已加载 ${ok}/${slots.length} 张`);
+    console.log(`相册：已加载 ${ok}/${slots.length} 张`, 'orig0=', slots[0] && slots[0].origUrl);
     applyDebugMode();
     applyDebugPhoto();
   } catch (err) {
@@ -614,7 +614,7 @@ function ensureFullTexture(mesh) {
  */
 const origLoader = new THREE.TextureLoader();
 function loadOriginalTexture(p) {
-  if (!p || !p.origUrl || p.origTexture || p.origPromise) return;
+  if (!p || !p.origUrl || p.origTexture || p.origPromise) { console.log('[dbg] orig skip', !!p, p && p.origUrl); return; }
   p.origPromise = (async () => {
     try {
       const r = await fetch(p.origUrl);
