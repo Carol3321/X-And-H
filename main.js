@@ -45,9 +45,13 @@ async function init() {
   setupEvents();
   cacheUi();
 
-  // 识别模型立刻开始下载（不等摄像头授权），和场景加载并行
-  startModelLoad().catch((err) => console.warn('模型预热失败:', err));
-  // 第二次打开时模型直接走缓存（8MB 的包下载一次就够）
+  // 先让相册和相机跑起来：识别模型 6MB + 100 张缩略图同时抢带宽，慢网下两边都卡。
+  // 缩略图优先，模型最多等 12 秒再开始下。
+  const galleryDone = loadGallery();
+  setTimeout(() => startModelLoad().catch((err) => console.warn('模型预热失败:', err)), 12000);
+  galleryDone.finally(() => startModelLoad().catch((err) => console.warn('模型预热失败:', err)));
+
+  // 第二次打开时模型/缩略图直接走缓存
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
@@ -58,7 +62,7 @@ async function init() {
       new Promise(resolve => setTimeout(resolve, 8000))
     ]).catch(err => console.warn('MediaPipe init skipped:', err)),
     Promise.race([
-      loadGallery(),
+      galleryDone,
       new Promise(resolve => setTimeout(resolve, 6000))
     ])
   ]);
@@ -382,47 +386,80 @@ async function loadGallery() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     const photos = (data && data.photos) || [];
+
+    // 先按清单把 100 个位置全部建好（用一张占位纹理），
+    // 缩略图陆续到了再换贴图。这样翻页序号和总数从一开始就是固定的，不会跳变。
+    const placeholder = createPlaceholderTexture();
+    const slots = photos.map((item, index) => {
+      const p = addPhotoToScene(placeholder, `assets/photos/${item.full}`);
+      p.orderIndex = index;
+      p.photoId = item.id;
+      p.midUrl = item.mid ? `assets/photos/${item.mid}` : null;
+      p.thumbUrl = `assets/photos/${item.thumb}`;
+      return p;
+    });
+
     const loader = new THREE.TextureLoader();
     let ok = 0;
     let cursor = 0;
-    // 并发 8 路：55 张串行加载在手机上要等半分钟，并发后几秒就铺满
     const worker = async () => {
-      while (cursor < photos.length) {
-        const item = photos[cursor++];
-        const order = photos.indexOf(item);
+      while (cursor < slots.length) {
+        const p = slots[cursor++];
         try {
-          // 慢网下偶发单张下载失败，以前会静默少一张（100 张只显示 99），这里重试
-          let tex;
-          for (let attempt = 0; ; attempt++) {
-            try {
-              tex = await loader.loadAsync(`assets/photos/${item.thumb}`);
-              break;
-            } catch (err) {
-              if (attempt >= 2) throw err;
-              await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
-            }
-          }
+          const url = await fetchToCache(p.thumbUrl);      // 带超时，卡住的请求不会一直占着
+          const tex = await loader.loadAsync(url);
           tex.colorSpace = THREE.SRGBColorSpace;
           tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-          const p = addPhotoToScene(tex, `assets/photos/${item.full}`);
-          p.orderIndex = order;      // 并发加载会乱序，记下相册里的原始位置
-          p.photoId = item.id;
-          p.midUrl = item.mid ? `assets/photos/${item.mid}` : null;
+          applyTextureToParticle(p, tex);
+          p.thumbTexture = tex;
           ok++;
         } catch (e) {
-          console.warn('照片加载失败:', item.thumb, e);
+          console.warn('照片加载失败:', p.thumbUrl, e);
         }
       }
     };
+    // 并发 4 路：慢网下开太多反而每张都变慢，还容易把连接占满
     await Promise.all(
-      Array.from({ length: Math.min(8, photos.length) }, worker)
+      Array.from({ length: Math.min(4, slots.length) }, worker)
     );
-    console.log(`相册：已加载 ${ok}/${photos.length} 张`);
+    console.log(`相册：已加载 ${ok}/${slots.length} 张`);
     applyDebugMode();
     applyDebugPhoto();
   } catch (err) {
     console.warn('相册清单读取失败:', err);
   }
+}
+
+/** 灰色占位纹理：缩略图没到位时先占着位置 */
+function createPlaceholderTexture() {
+  const c = document.createElement('canvas');
+  c.width = 4; c.height = 4;
+  const g = c.getContext('2d');
+  g.fillStyle = '#0d0b06';
+  g.fillRect(0, 0, 4, 4);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/** 先带超时地把图拉进 HTTP 缓存，再交给 TextureLoader；失败重试一次 */
+async function fetchToCache(url, timeoutMs = 12000, tries = 2) {
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const r = await fetch(url, { signal: ctrl.signal });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      await r.arrayBuffer();          // 读完即进缓存
+      return url;
+    } catch (e) {
+      lastErr = e;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastErr;
 }
 
 /** 调试用：?mode=scatter 直接切到散开状态 */
@@ -640,13 +677,13 @@ async function initMediaPipe() {
     setHintText(cameraErrorText(err));
     return;
   }
-  // 3) 模型在页面打开时就已经开始下载了，这里只等它
-  try {
-    handLandmarker = await modelReady;
-  } catch (err) {
-    console.warn('手部模型加载失败:', err);
-    setHintText('⚠ 手部模型加载失败，摄像头正常但没有手势识别');
-  }
+  // 3) 模型在后台等（不阻塞页面显示）
+  modelReady
+    .then((lm) => { handLandmarker = lm; })
+    .catch((err) => {
+      console.warn('手部模型加载失败:', err);
+      setHintText('⚠ 手部模型加载失败，摄像头正常但没有手势识别');
+    });
 }
 
 /**
