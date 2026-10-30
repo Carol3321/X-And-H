@@ -698,14 +698,22 @@ function startModelLoad() {
   const MODEL_URL = './assets/hand_landmarker.task';
 
   const visionReady = FilesetResolver.forVisionTasks(WASM_BASE);
+  // 模型解压后 7.46MB，用它算百分比和剩余时间，让人知道要等多久
+  const MODEL_BYTES = 7.46 * 1048576;
+  const t0 = performance.now();
   const modelBlob = fetchWithProgress(MODEL_URL, (got) => {
     if (STATE.mode === 'FOCUS') return;   // 正在翻照片就别抢提示
-    setHintText(`识别模型下载中 ${(got / 1048576).toFixed(1)} MB…`, false);
+    const pct = Math.min(99, Math.round((got / MODEL_BYTES) * 100));
+    const secs = (performance.now() - t0) / 1000;
+    const speed = got / Math.max(secs, 1);                       // 字节/秒
+    const left = Math.max(0, (MODEL_BYTES - got) / Math.max(speed, 1));
+    const eta = left >= 90 ? `${Math.round(left / 60)} 分钟` : `${Math.max(1, Math.round(left))} 秒`;
+    setHintText(`识别模型 ${pct}% · 约还需 ${eta}`, false);
   });
 
   modelReady = (async () => {
     const [vision, blob] = await Promise.all([visionReady, modelBlob]);
-    setHintText('识别模型初始化中…', false);
+    setHintText('识别模型已下载完 · 正在启动识别引擎…', false);
     return HandLandmarker.createFromOptions(vision, {
       baseOptions: {
         modelAssetPath: URL.createObjectURL(blob),
