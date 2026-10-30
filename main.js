@@ -391,7 +391,17 @@ async function loadGallery() {
         const item = photos[cursor++];
         const order = photos.indexOf(item);
         try {
-          const tex = await loader.loadAsync(`assets/photos/${item.thumb}`);
+          // 慢网下偶发单张下载失败，以前会静默少一张（100 张只显示 99），这里重试
+          let tex;
+          for (let attempt = 0; ; attempt++) {
+            try {
+              tex = await loader.loadAsync(`assets/photos/${item.thumb}`);
+              break;
+            } catch (err) {
+              if (attempt >= 2) throw err;
+              await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+            }
+          }
           tex.colorSpace = THREE.SRGBColorSpace;
           tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
           const p = addPhotoToScene(tex, `assets/photos/${item.full}`);
