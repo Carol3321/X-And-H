@@ -631,6 +631,11 @@ function loadOriginalTexture(p) {
         if (STATE.focusTarget === p.mesh) {
           STATE.origStatus = 'loading';
           STATE.origPct = total ? Math.min(99, Math.round((got / total) * 100)) : 0;
+          // 模型还没就绪时 updateHud 不会跑，这里直接写一次
+          setHintText(
+            `🖼 照片 ${STATE.focusIndex + 1} / ${photoList().length} · 原图 ${STATE.origPct}% · 捏合或 ↑↓ 翻页`,
+            false
+          );
         }
       }
       const blob = new Blob(chunks);
@@ -643,6 +648,10 @@ function loadOriginalTexture(p) {
       if (STATE.focusTarget === p.mesh) {
         applyTextureToParticle(p, tex);
         STATE.origStatus = 'done';
+        setHintText(
+          `🖼 照片 ${STATE.focusIndex + 1} / ${photoList().length} · 原图画质 · 捏合或 ↑↓ 翻页`,
+          false
+        );
       }
     } catch (e) {
       console.warn('原图加载失败:', p.origUrl, e);
