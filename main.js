@@ -699,6 +699,7 @@ function startModelLoad() {
 
   const visionReady = FilesetResolver.forVisionTasks(WASM_BASE);
   const modelBlob = fetchWithProgress(MODEL_URL, (got) => {
+    if (STATE.mode === 'FOCUS') return;   // 正在翻照片就别抢提示
     setHintText(`识别模型下载中 ${(got / 1048576).toFixed(1)} MB…`, false);
   });
 
@@ -865,6 +866,10 @@ function focusAtIndex(i) {
   applyFocusOverlay();
   flashHint();
   updateHud(lastPose, true);
+  if (ui.mode && STATE.mode === 'FOCUS') {
+    ui.mode.textContent = `🖼 照片 ${STATE.focusIndex + 1} / ${n} · 捏合或 ↑↓ 翻页`;
+    ui.mode.dataset.state = '';
+  }
 }
 
 // ============================================================
