@@ -396,6 +396,7 @@ async function loadGallery() {
       p.photoId = item.id;
       p.midUrl = item.mid ? `assets/photos/${item.mid}` : null;
       p.thumbUrl = `assets/photos/${item.thumb}`;
+      p.origUrl = item.orig ? `assets/photos/${item.orig}` : null;
       return p;
     });
 
@@ -576,18 +577,21 @@ function ensureFullTexture(mesh) {
   const p = particleSystem.find(x => x.mesh === mesh);
   if (!p) return;
 
-  if (p.fullTexture) {
+  // 三级递进：720 先出画面 -> 1350 变清楚 -> 原图最高画质
+  if (p.origTexture) {
+    applyTextureToParticle(p, p.origTexture);
+  } else if (p.fullTexture) {
     applyTextureToParticle(p, p.fullTexture);
+    loadOriginalTexture(p);
   } else {
-    // 中间版本先顶上
     loadMidTexture(p).then((mid) => {
-      if (mid && !p.fullTexture) applyTextureToParticle(p, mid);
+      if (mid && !p.fullTexture && !p.origTexture) applyTextureToParticle(p, mid);
     });
     loadFullTexture(p).then((tex) => {
       if (!tex) return;
-      applyTextureToParticle(p, tex);
-      // 大图到位后释放中间版本，省显存
+      if (!p.origTexture) applyTextureToParticle(p, tex);
       if (p.midTexture) { p.midTexture.dispose(); p.midTexture = null; }
+      loadOriginalTexture(p);
     });
   }
 
@@ -602,6 +606,50 @@ function ensureFullTexture(mesh) {
       if (k <= 2) loadFullTexture(q);
     }
   }
+}
+
+/**
+ * 原图：浏览器把 3024x4032 原样当纹理用，所以是真正的原始画质。
+ * 单张 2~9MB，慢网下要等一会儿，这里显示下载进度。
+ */
+const origLoader = new THREE.TextureLoader();
+function loadOriginalTexture(p) {
+  if (!p || !p.origUrl || p.origTexture || p.origPromise) return;
+  p.origPromise = (async () => {
+    try {
+      const r = await fetch(p.origUrl);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const total = Number(r.headers.get('content-length')) || 0;
+      const reader = r.body.getReader();
+      const chunks = [];
+      let got = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        got += value.length;
+        if (STATE.focusTarget === p.mesh) {
+          STATE.origStatus = 'loading';
+          STATE.origPct = total ? Math.min(99, Math.round((got / total) * 100)) : 0;
+        }
+      }
+      const blob = new Blob(chunks);
+      const url = URL.createObjectURL(blob);
+      const tex = await origLoader.loadAsync(url);
+      URL.revokeObjectURL(url);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      p.origTexture = tex;
+      if (STATE.focusTarget === p.mesh) {
+        applyTextureToParticle(p, tex);
+        STATE.origStatus = 'done';
+      }
+    } catch (e) {
+      console.warn('原图加载失败:', p.origUrl, e);
+    } finally {
+      p.origPromise = null;
+    }
+  })();
 }
 
 function handleImageUpload(e) {
@@ -828,7 +876,12 @@ function applyMode(mode) {
 /** 让当前特写的照片走"独立叠加"图层（不吃泛光/色调映射），其余照片回到普通图层 */
 function applyFocusOverlay() {
   const target = STATE.mode === 'FOCUS' ? STATE.focusTarget : null;
-  if (overlayPhotoMesh && overlayPhotoMesh !== target) setPhotoOverlay(overlayPhotoMesh, false);
+  if (overlayPhotoMesh && overlayPhotoMesh !== target) {
+    setPhotoOverlay(overlayPhotoMesh, false);
+    // 原图纹理一张就有 40~50MB 显存，离开特写就丢掉
+    const prev = particleSystem.find(x => x.mesh === overlayPhotoMesh);
+    if (prev && prev.origTexture) { prev.origTexture.dispose(); prev.origTexture = null; }
+  }
   if (target) setPhotoOverlay(target, true);
   overlayPhotoMesh = target;
 }
@@ -869,6 +922,8 @@ function focusAtIndex(i) {
   const n = list.length;
   STATE.mode = 'FOCUS';
   STATE.focusIndex = ((i % n) + n) % n;
+  STATE.origStatus = null;
+  STATE.origPct = 0;
   STATE.focusTarget = list[STATE.focusIndex].mesh;
   ensureFullTexture(STATE.focusTarget);
   applyFocusOverlay();
@@ -1035,7 +1090,11 @@ function updateHud(ev, force = false) {
     const info = STATE.mode === 'FOCUS' ? focusInfo() : null;
     if (info) {
       // 用方向键翻照片时也要显示序号（不依赖是否识别到手）
-      ui.mode.textContent = `🖼 照片 ${info.index + 1} / ${info.total} · 捏合或 ↑↓ 翻页`;
+      const extra =
+        STATE.origStatus === 'loading' ? ` · 原图 ${STATE.origPct}%`
+        : STATE.origStatus === 'done' ? ' · 原图画质'
+        : '';
+      ui.mode.textContent = `🖼 照片 ${info.index + 1} / ${info.total}${extra} · 捏合或 ↑↓ 翻页`;
       ui.mode.dataset.state = ev.visible ? ev.label : 'NONE';
     } else if (ev.visible) {
       ui.mode.textContent = MODE_TEXT[ev.mode] || MODE_TEXT.IDLE;
