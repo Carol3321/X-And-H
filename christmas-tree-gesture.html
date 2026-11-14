@@ -98,8 +98,6 @@ h1 {
  text-transform: uppercase;
 }
 
-#file-input { display: none; }
-
 /* 摄像头/模型出错时：提示条变红并可换行，避免长文案溢出屏幕 */
 #gesture-hint.warn {
  border-color: rgba(255, 130, 130, 0.55);
@@ -348,10 +346,6 @@ h1 {
  <div class="signature">X And H</div>
 
  <div class="upload-wrapper">
- <label class="upload-btn">
- Add Memories
- <input type="file" id="file-input" multiple accept="image/*">
- </label>
  <button id="tutorial-btn" class="upload-btn ghost" type="button">手势教程</button>
  <div class="hint-text">H 隐藏按钮 · T 手势教程 · G 调试面板</div>
  </div>
@@ -365,7 +359,7 @@ h1 {
 <div id="gesture-hint">
  <span id="gh-dot"></span>
  <span id="gh-mode">把手举到摄像头前…</span>
- <span id="gh-tip">✊ 聚树 · 🖐 散开 · 🤏 看照片·再捏翻页 · ↑↓ 翻页 · U 回第一张</span>
+ <span id="gh-tip">✊ 聚树 · 🖐 散开 · 🤏 看照片·再捏翻页 · ↑↓ 翻页 · U 回第一张 · O 看原图</span>
 </div>
 
 <div id="gesture-debug">
@@ -441,7 +435,7 @@ h1 {
   </ul>
 
   <div class="tut-foot">
-   <div class="tut-keys">按 <kbd>T</kbd> 随时重看 · <kbd>Esc</kbd> 关闭 · 按 <kbd>G</kbd> 看识别数值<br>手累了？用 <kbd>↑</kbd><kbd>↓</kbd> 翻照片，<kbd>U</kbd> 回到第一张</div>
+   <div class="tut-keys">按 <kbd>T</kbd> 随时重看 · <kbd>Esc</kbd> 关闭 · 按 <kbd>G</kbd> 看识别数值<br>手累了？用 <kbd>↑</kbd><kbd>↓</kbd> 翻照片，<kbd>U</kbd> 回到第一张<br>想看原图？按 <kbd>O</kbd> 单独下载当前这张的原始文件（平时显示高清图，省流量）</div>
    <button class="tut-start" type="button">开始体验</button>
   </div>
  </div>

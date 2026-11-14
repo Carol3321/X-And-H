@@ -2,7 +2,16 @@
 
 一个用**手势控制**的 3D 新年树 —— Three.js + MediaPipe Hands，纯前端、离线可跑。
 
-![效果预览](_shots/new-year-title.png)
+线上地址：https://carol3321.github.io/X-And-H/
+
+## 版本
+
+当前版本：**v1.0-stable**（套用 Can-Yaya 模板，待验收）
+
+- 版本记录与回滚方式：[VERSIONS.md](VERSIONS.md)
+- 协作 / 升级 / 发布规则：[AGENTS.md](AGENTS.md)
+
+> **相册目前是空的**，等放入照片后才会在树上显示。放照片的方式见 AGENTS.md 第八节。
 
 ## 这是什么
 

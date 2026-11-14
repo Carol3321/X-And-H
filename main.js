@@ -22,6 +22,8 @@ const STATE = {
 
 let scene, camera, renderer, composer;
 let mainGroup;
+let treeStar = null;            // 树顶五角星，每帧转向镜头
+const _starQuat = new THREE.Quaternion();
 let clock = new THREE.Clock();
 let particleSystem = [];
 let photoMeshGroup = new THREE.Group();
@@ -49,10 +51,9 @@ async function init() {
   // 缩略图优先，模型最多等 12 秒再开始下。
   const galleryDone = loadGallery();
   setTimeout(() => startModelLoad().catch((err) => console.warn('模型预热失败:', err)), 12000);
-  // 相册一到位就同时开始：模型下载 + 全部原图后台预下载
+  // 相册一到位就开始下模型。原图不预下载：默认展示高清优化图，原图只在按 O 时单独取
   galleryDone.finally(() => {
     startModelLoad().catch((err) => console.warn('模型预热失败:', err));
-    setTimeout(startOriginalPrefetch, 3000);
   });
 
   // 第二次打开时模型/缩略图直接走缓存
@@ -272,6 +273,24 @@ function updateViewMetrics() {
   viewMetrics.w = viewMetrics.h * camera.aspect;
 }
 
+/** 五角星：外顶点半径 outer、内凹半径 inner，挤一点厚度让金属材质有明暗 */
+function createStarGeometry(outer = 1.05, inner = 0.44, depth = 0.26) {
+  const shape = new THREE.Shape();
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 === 0 ? outer : inner;
+    const a = Math.PI / 2 + (i * Math.PI) / 5;   // 从正上方开始，顶点朝上
+    const x = Math.cos(a) * r;
+    const y = Math.sin(a) * r;
+    if (i === 0) shape.moveTo(x, y); else shape.lineTo(x, y);
+  }
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 2,
+  });
+  geo.translate(0, 0, -depth / 2);              // 厚度居中，转动时不偏心
+  return geo;
+}
+
 function createParticles() {
   const sphereGeo = new THREE.SphereGeometry(0.5, 32, 32);
   const boxGeo = new THREE.BoxGeometry(0.55, 0.55, 0.55);
@@ -307,12 +326,14 @@ function createParticles() {
     mainGroup.add(mesh);
     particleSystem.push(new Particle(mesh, type, false));
   }
-  const starGeo = new THREE.OctahedronGeometry(1.2, 0);
+  // 树顶：五角星（以前是八面体，正面看就是个菱形）
+  const starGeo = createStarGeometry();
   const starMat = new THREE.MeshStandardMaterial({
     color: 0xffdd88, emissive: 0xffaa00, emissiveIntensity: 1.0, metalness: 1.0, roughness: 0
   });
   const star = new THREE.Mesh(starGeo, starMat);
   star.position.set(0, CONFIG.particles.treeHeight/2 + 1.2, 0);
+  treeStar = star;
   mainGroup.add(star);
   mainGroup.add(photoMeshGroup);
 }
@@ -368,6 +389,8 @@ function addPhotoToScene(texture, fullUrl = null) {
   group.scale.set(s,s,s);
   photoMeshGroup.add(group);
   const particle = new Particle(group, 'PHOTO', false);
+  particle.frameMesh = frame;         // 真图到位后要按真实比例重做几何
+  particle.aspect = aspect;
   particle.frameW = pw + 0.2;         // 相框尺寸，特写时按它算最大可放倍数
   particle.frameH = ph + 0.2;
   particle.fullUrl = fullUrl;         // 树上用缩略图，大图按需加载
@@ -395,12 +418,14 @@ async function loadGallery() {
     // 缩略图陆续到了再换贴图。这样翻页序号和总数从一开始就是固定的，不会跳变。
     const placeholder = createPlaceholderTexture();
     const slots = photos.map((item, index) => {
-      const p = addPhotoToScene(placeholder, `assets/photos/${item.full}`);
+      const p = addPhotoToScene(placeholder, item.full ? `assets/photos/${item.full}` : null);
       p.orderIndex = index;
       p.photoId = item.id;
       p.midUrl = item.mid ? `assets/photos/${item.mid}` : null;
       p.thumbUrl = `assets/photos/${item.thumb}`;
       p.origUrl = item.orig ? `assets/photos/${item.orig}` : null;
+      p.origW = item.w || 0;            // 原图像素尺寸，用来判断是否超过显卡纹理上限
+      p.origH = item.h || 0;
       return p;
     });
 
@@ -500,7 +525,7 @@ const FULL_CACHE_MAX = 8;
 const fullLoader = new THREE.TextureLoader();
 
 function loadFullTexture(p) {
-  if (!p || !p.fullUrl) return Promise.resolve(null);
+  if (!p || !p.fullUrl || p.fullUrl === p.midUrl) return Promise.resolve(null);   // 没单独的大图就直接跳过
   if (p.fullTexture) return Promise.resolve(p.fullTexture);
   if (p.fullPromise) return p.fullPromise;
   // 用 fetch 取字节再交给 TextureLoader：Image 那条路在代理/慢网下会静默失败且没有超时
@@ -511,6 +536,8 @@ function loadFullTexture(p) {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const tex = await fullLoader.loadAsync(url);
+      // 显式解码：把解码放在下载阶段完成，换贴图那一帧就不会卡动画
+      try { if (tex.image && tex.image.decode) await tex.image.decode(); } catch (e) {}
       URL.revokeObjectURL(url);
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
@@ -558,7 +585,8 @@ function loadMidTexture(p) {
   p.midPromise = new Promise((resolve) => {
     fullLoader.load(
       p.midUrl,
-      (tex) => {
+      async (tex) => {
+        try { if (tex.image && tex.image.decode) await tex.image.decode(); } catch (e) {}
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
         p.midTexture = tex;
@@ -576,48 +604,71 @@ function applyTextureToParticle(p, tex) {
   if (!p || !tex) return;
   const plane = p.mesh.userData.photoMesh;
   if (!plane) return;
+  refitPhotoGeometry(p, tex);         // 先按这张图的真实宽高比重建，再换贴图
   if (plane.material.map === tex) return;
   plane.material.map = tex;
   plane.material.needsUpdate = true;
 }
 
-/** 某张照片成为特写时：先上 720px，再换 1800px（并预取后面几张） */
+/**
+ * 相册建粒子时用的是 1:1 占位图，几何也是按 1:1 建的。
+ * 真图贴上后必须重建画面和相框，否则每张照片都会被拉成正方形（人像变形）。
+ */
+function refitPhotoGeometry(p, tex) {
+  const img = tex.image;
+  if (!img || !img.width || !img.height) return;
+  const aspect = img.width / img.height;
+  if (p.aspect && Math.abs(aspect - p.aspect) < 0.01) return;   // 比例一致，什么都不用做
+  const LONG = 1.2;                                  // 与 addPhotoToScene 保持一致
+  const pw = aspect >= 1 ? LONG : LONG * aspect;
+  const ph = aspect >= 1 ? LONG / aspect : LONG;
+  const plane = p.mesh.userData.photoMesh;
+  if (plane) {
+    plane.geometry.dispose();
+    plane.geometry = new THREE.PlaneGeometry(pw, ph);
+  }
+  if (p.frameMesh) {
+    p.frameMesh.geometry.dispose();
+    p.frameMesh.geometry = new THREE.BoxGeometry(pw + 0.2, ph + 0.2, 0.05);
+  }
+  p.aspect = aspect;
+  p.frameW = pw + 0.2;
+  p.frameH = ph + 0.2;
+}
+
+/**
+ * 某张照片成为特写时：先用中图秒出画面，再换 1920px 高清图。
+ * 默认不碰原图（单张最大 20MB）；要看原图按 O，见 loadOriginalTexture。
+ */
 function ensureFullTexture(mesh) {
   if (!mesh) return;
   const p = particleSystem.find(x => x.mesh === mesh);
   if (!p) return;
 
-  // 三级递进：720 先出画面 -> 1350 变清楚 -> 原图最高画质
-  if (p.origTexture) {
-    applyTextureToParticle(p, p.origTexture);
-  } else if (p.fullTexture) {
+  if (p.fullTexture) {
     applyTextureToParticle(p, p.fullTexture);
-    loadOriginalTexture(p);
   } else {
+    // 中图几十到一百多 KB，先用它把画面填上，避免空白等待
     loadMidTexture(p).then((mid) => {
-      if (mid && !p.fullTexture && !p.origTexture) applyTextureToParticle(p, mid);
+      if (mid && !p.fullTexture) applyTextureToParticle(p, mid);
     });
-    // 原图和大图并行：之前是等大图下完才开始下载原图，
-    // 慢网下大图又排在 100 张缩略图后面，结果永远等不到
-    loadOriginalTexture(p);
     loadFullTexture(p).then((tex) => {
-      if (!tex) return;
-      if (!p.origTexture) applyTextureToParticle(p, tex);
+      if (!tex) return;                                   // 高清图失败就留在中图上，画面不会空
+      if (STATE.focusTarget === p.mesh) applyTextureToParticle(p, tex);
       if (p.midTexture) { p.midTexture.dispose(); p.midTexture = null; }
+      prefetchNeighbour(p);                               // 当前这张好了，才去准备下一张
     });
   }
+  if (p.fullTexture) prefetchNeighbour(p);
+}
 
-  // 预取：后面两张的大图 + 四张的中间版本
+/** 只预取下一张高清图（并发 1），保证切换时已经解码好 */
+function prefetchNeighbour(p) {
   const list = photoList();
-  const i = list.findIndex(x => x.mesh === mesh);
-  if (i >= 0) {
-    for (let k = 1; k <= 4; k++) {
-      const q = list[(i + k) % list.length];
-      if (!q || q === p) continue;
-      loadMidTexture(q);
-      if (k <= 2) loadFullTexture(q);
-    }
-  }
+  const i = list.findIndex(x => x.mesh === p.mesh);
+  if (i < 0) return;
+  const next = list[(i + 1) % list.length];
+  if (next && next !== p && !next.fullTexture && !next.fullPromise) loadFullTexture(next);
 }
 
 /**
@@ -627,6 +678,12 @@ function ensureFullTexture(mesh) {
 const origLoader = new THREE.TextureLoader();
 function loadOriginalTexture(p) {
   if (!p || !p.origUrl || p.origTexture || p.origPromise) return;
+  // 超过显卡纹理上限的原图 WebGL 会直接传不上去（手机上会变黑），这种情况用 mid 顶上
+  const limit = (renderer.capabilities && renderer.capabilities.maxTextureSize) || 4096;
+  if (p.origW && Math.max(p.origW, p.origH) > limit) {
+    console.info(`原图 ${p.origW}×${p.origH} 超过本机纹理上限 ${limit}，改用 mid 版本（屏幕上看不出差别）`);
+    return;
+  }
   p.origPromise = (async () => {
     try {
       const r = await fetch(p.origUrl);
@@ -755,36 +812,6 @@ async function initMediaPipe() {
     });
 }
 
-/**
- * 按顺序把 100 张原图拉下来塞进缓存。慢，但只需要一次；
- * 下完以后点任意一张都是秒出原图。
- */
-let prefetchRunning = false;
-async function startOriginalPrefetch() {
-  if (prefetchRunning || !('caches' in window)) return;
-  prefetchRunning = true;
-  const list = photoList();
-  if (!list.some((p) => p.origUrl)) return;   // 没有原图素材就不跑
-  STATE.prefetchTotal = list.length;
-  STATE.prefetchDone = 0;
-  for (const p of list) {
-    if (!p.origUrl) { STATE.prefetchDone++; continue; }
-    try {
-      const cache = await caches.open('mp-assets-v2');
-      if (!(await cache.match(p.origUrl))) {
-        const res = await fetch(p.origUrl);
-        if (res.ok) await cache.put(p.origUrl, res.clone());
-      }
-    } catch (e) {
-      // 单张失败不影响整体，下次打开会再试
-    }
-    STATE.prefetchDone++;
-    updateHud(lastPose, true);
-  }
-  prefetchRunning = false;
-  STATE.prefetchDone = STATE.prefetchTotal;
-  updateHud(lastPose, true);
-}
 
 /**
  * 页面一打开就开始拉识别模型（不等摄像头授权），
@@ -1148,10 +1175,6 @@ function updateHud(ev, force = false) {
         : '';
       ui.mode.textContent = `🖼 照片 ${info.index + 1} / ${info.total}${extra} · 捏合或 ↑↓ 翻页`;
       ui.mode.dataset.state = ev.visible ? ev.label : 'NONE';
-    } else if (STATE.prefetchTotal && STATE.prefetchDone < STATE.prefetchTotal) {
-      const pct = Math.round((STATE.prefetchDone / STATE.prefetchTotal) * 100);
-      ui.mode.textContent = `原图预下载 ${STATE.prefetchDone} / ${STATE.prefetchTotal}（${pct}%）· 下完点开就是原图`;
-      ui.mode.dataset.state = 'NONE';
     } else if (ev.visible) {
       ui.mode.textContent = MODE_TEXT[ev.mode] || MODE_TEXT.IDLE;
       ui.mode.dataset.state = ev.label;
@@ -1229,6 +1252,11 @@ function setupEvents() {
       // U 直接回到第一张
       e.preventDefault();
       focusAtIndex(0);
+    } else if (k === 'o') {
+      // O：只看当前这张的原图（默认不下载原图，省流量）
+      e.preventDefault();
+      const p = particleSystem.find(x => x.mesh === STATE.focusTarget);
+      if (p) loadOriginalTexture(p);
     }
   });
 }
@@ -1283,6 +1311,12 @@ function updateSceneRotation(dt) {
   }
   mainGroup.rotation.y = STATE.rotation.y;
   mainGroup.rotation.x = STATE.rotation.x;
+
+  // 星星始终正对镜头：不然树一转，五角星就侧成一条线
+  if (treeStar) {
+    mainGroup.getWorldQuaternion(_starQuat);
+    treeStar.quaternion.copy(_starQuat.invert());
+  }
 }
 
 init();
