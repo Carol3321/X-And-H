@@ -67,11 +67,15 @@ h1 {
 }
 
 .upload-wrapper {
- margin-top: 20px;
+ margin-top: 0;
  pointer-events: auto;
- text-align: center;
+ display: flex; align-items: center; gap: 10px;
+ padding-right: 10px;
+ border-right: 1px solid rgba(212, 175, 55, 0.25);
  transition: opacity 0.5s ease;
 }
+/* 按钮挪进底部提示条后，尺寸跟着收紧 */
+.upload-wrapper .upload-btn { padding: 4px 14px; font-size: 10px; letter-spacing: 2px; }
 .upload-btn {
  background: rgba(20, 20, 20, 0.6);
  border: 1px solid rgba(212, 175, 55, 0.4);
@@ -93,7 +97,8 @@ h1 {
 .hint-text {
  color: rgba(212, 175, 55, 0.5);
  font-size: 9px;
- margin-top: 8px;
+ margin-top: 0;
+ white-space: nowrap;
  letter-spacing: 1px;
  text-transform: uppercase;
 }
@@ -313,9 +318,9 @@ h1 {
 /* 手机：标题、提示条、预览窗都要收窄，否则会撑出横向滚动 */
 @media (max-width: 820px) {
  #ui-layer { padding-top: 22px; }
- .upload-wrapper { margin-top: 14px; }
- .upload-btn { padding: 9px 18px; font-size: 9px; letter-spacing: 2px; }
- .hint-text { font-size: 8px; letter-spacing: 0.5px; }
+ .upload-wrapper { margin-top: 0; padding-right: 8px; gap: 6px; }
+ .upload-wrapper .upload-btn { padding: 3px 10px; font-size: 9px; letter-spacing: 1px; }
+ .hint-text { display: none; }
  #gesture-hint {
   bottom: 14px; max-width: calc(100vw - 24px); box-sizing: border-box;
   flex-wrap: wrap; justify-content: center; gap: 6px 8px;
@@ -344,11 +349,6 @@ h1 {
 <div id="ui-layer">
  <h1>Happy New Year</h1>
  <div class="signature">X And H</div>
-
- <div class="upload-wrapper">
- <button id="tutorial-btn" class="upload-btn ghost" type="button">手势教程</button>
- <div class="hint-text">H 隐藏按钮 · T 手势教程 · G 调试面板</div>
- </div>
 </div>
 
 <div id="webcam-wrapper">
@@ -357,6 +357,10 @@ h1 {
 </div>
 
 <div id="gesture-hint">
+ <div class="upload-wrapper">
+  <button id="tutorial-btn" class="upload-btn ghost" type="button">手势教程</button>
+  <div class="hint-text">H 隐藏按钮 · T 手势教程 · G 调试面板</div>
+ </div>
  <span id="gh-dot"></span>
  <span id="gh-mode">把手举到摄像头前…</span>
  <span id="gh-tip">✊ 聚树 · 🖐 散开 · 🤏 看照片·再捏翻页 · ↑↓ 翻页 · U 回第一张 · O 看原图</span>
