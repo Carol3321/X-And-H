@@ -110,6 +110,7 @@
   'use strict';
   const FIREWORKS_DURATION = 60000;   // 烟花表演时长（毫秒），之后自然过渡到照片
   const MUSIC_ENABLED = false;        // 先不放歌试效果；要放歌改成 true
+  const TREE_VERSION = '20261115b';  // 改了 tree.html 就改这里，强制浏览器取新版
 
   const invite = document.getElementById('invite');
   const sky = document.getElementById('sky');
@@ -150,7 +151,8 @@
   function transitionToTree() {
     sky.classList.add('fade-out');
     // 懒加载照片树：避免页面一开始就弹摄像头授权
-    tree.src = 'tree.html';
+    // 带版本号，避免浏览器 10 分钟缓存导致改动不生效
+    tree.src = 'tree.html?v=' + TREE_VERSION;
     tree.classList.add('fade-in');
     setTimeout(() => { if (window.__fireworks) window.__fireworks.stop(); }, 1500);
   }
