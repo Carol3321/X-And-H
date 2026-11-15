@@ -1,6 +1,6 @@
 // 缓存 MediaPipe 两个大文件和相册缩略图/中图：第二次打开秒开，别的请求完全不拦
-// v5：套用 Can-Yaya 模板后相册清空重来，旧缓存整体作废
-const CACHE = 'mp-assets-v5';
+// v4：图片换成了三档优化版本，旧缓存必须整体作废，否则老访客看到的还是旧图
+const CACHE = 'mp-assets-v4';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil((async () => {

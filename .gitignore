@@ -23,3 +23,7 @@ __pycache__/
 _shots/report.json
 assets/_shots/
 _shots/*_desktop.jpg
+
+# 不部署：音乐（版权）+ 原始大图（体积）
+assets/music/
+assets/photos/orig/

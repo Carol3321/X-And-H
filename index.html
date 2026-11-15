@@ -2,75 +2,176 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Happy New Year · X And H</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#02040c">
+<title>宝贝女儿</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #000; }
-  body {
-    font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-    color: #e8dcc0; display: flex; align-items: center; justify-content: center;
-    text-align: center; overflow: hidden;
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #02040c; }
+  body { position: fixed; inset: 0; overscroll-behavior: none; }
+
+  canvas { position: fixed; inset: 0; display: block; width: 100vw; height: 100vh; height: 100dvh; }
+  #stars { z-index: 0; }
+  #sky { z-index: 1; background: transparent; touch-action: none;
+         transition: opacity 1.4s ease; }
+  #sky.fade-out { opacity: 0; }
+
+  /* 阶段一：星空邀请 */
+  #invite {
+    position: fixed; inset: 0; z-index: 3;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 30px; transition: opacity 0.7s ease; pointer-events: auto;
   }
-  .wrap { padding: 0 32px; max-width: 520px; }
-  h1 {
-    font-family: 'Cinzel', 'Times New Roman', serif;
-    font-size: 34px; font-weight: 400; letter-spacing: 6px; margin: 0 0 10px;
-    background: linear-gradient(to bottom, #fff, #eebb66);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  #invite.hidden { opacity: 0; pointer-events: none; }
+  .invite-text {
+    color: #f5e6c4; font-size: clamp(22px, 5vw, 34px); letter-spacing: 0.18em;
+    text-indent: 0.18em; text-shadow: 0 0 24px rgba(255, 214, 130, 0.55);
+    font-family: 'Songti SC', 'STSong', 'SimSun', serif;
   }
-  .sub { color: rgba(212, 175, 55, 0.55); font-size: 12px; letter-spacing: 3px; margin-bottom: 34px; }
-  .tip {
-    font-size: 15px; line-height: 2; color: rgba(255, 255, 255, 0.72);
-    border: 1px solid rgba(212, 175, 55, 0.25); border-radius: 12px;
-    padding: 22px 20px; background: rgba(255, 255, 255, 0.03);
+  .invite-btn {
+    width: 84px; height: 84px; border-radius: 50%;
+    border: 1px solid rgba(255, 214, 130, 0.6);
+    background: radial-gradient(circle at 35% 30%, rgba(255, 246, 220, 0.9), rgba(230, 190, 110, 0.55));
+    color: #6b4d16; font-size: 15px; letter-spacing: 0.1em; cursor: pointer;
+    box-shadow: 0 0 28px rgba(255, 200, 110, 0.5), inset 0 0 12px rgba(255,255,255,0.6);
+    animation: breathe 3.2s ease-in-out infinite;
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+    font-family: inherit;
   }
-  .tip b { color: #ffd966; }
-  .arrow { font-size: 30px; margin: 18px 0 6px; color: #d4af37; }
-  a.go {
-    display: inline-block; margin-top: 26px; padding: 12px 34px;
-    color: #d4af37; text-decoration: none; font-size: 12px; letter-spacing: 4px;
-    border: 1px solid rgba(212, 175, 55, 0.55); transition: all .3s;
+  @keyframes breathe {
+    0%, 100% { box-shadow: 0 0 18px rgba(255,200,110,0.4), inset 0 0 10px rgba(255,255,255,0.5); transform: scale(1); }
+    50% { box-shadow: 0 0 40px rgba(255,214,130,0.75), inset 0 0 16px rgba(255,255,255,0.7); transform: scale(1.06); }
   }
-  a.go:hover { background: #d4af37; color: #000; }
-  .spin {
-    width: 26px; height: 26px; margin: 0 auto 22px;
-    border: 1px solid rgba(212, 175, 55, 0.2); border-top-color: #d4af37;
-    border-radius: 50%; animation: sp 0.9s linear infinite;
+
+  /* 音乐控制 */
+  #music-btn {
+    position: fixed; right: 18px; bottom: 18px; z-index: 5;
+    width: 44px; height: 44px; border-radius: 50%;
+    border: 1px solid rgba(255,214,130,0.35);
+    background: rgba(10, 12, 18, 0.55); backdrop-filter: blur(6px);
+    color: #e8c979; font-size: 20px; line-height: 1; cursor: pointer;
+    display: none; align-items: center; justify-content: center;
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
   }
-  @keyframes sp { to { transform: rotate(360deg); } }
-  #wx { display: none; }
+  #music-btn.visible { display: flex; }
+  #music-panel {
+    position: fixed; right: 18px; bottom: 70px; z-index: 5;
+    width: 208px; padding: 14px 16px; border-radius: 14px;
+    border: 1px solid rgba(255,214,130,0.35);
+    background: rgba(10, 12, 18, 0.72); backdrop-filter: blur(8px);
+    color: #e8c979; font-size: 13px; letter-spacing: 0.05em;
+    display: none; flex-direction: column; gap: 12px;
+  }
+  #music-panel.open { display: flex; }
+  #music-panel .row { display: flex; align-items: center; gap: 10px; }
+  #music-panel button {
+    flex: none; padding: 6px 12px; border-radius: 8px; cursor: pointer;
+    border: 1px solid rgba(255,214,130,0.5); background: transparent; color: #e8c979; font-size: 13px;
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  }
+  #music-panel input[type=range] { flex: 1; accent-color: #e8c979; }
+  #music-title { font-size: 12px; color: rgba(232,201,121,0.85); text-align: center; }
+  #music-state { font-size: 12px; color: rgba(232,201,121,0.6); text-align: center; }
+
+  /* 阶段三：照片树 iframe */
+  #tree {
+    position: fixed; inset: 0; z-index: 2; width: 100vw; height: 100vh; height: 100dvh;
+    border: 0; display: none; opacity: 0; transition: opacity 1.4s ease; background: #02040c;
+  }
+  #tree.fade-in { display: block; opacity: 1; }
 </style>
 </head>
 <body>
-<div class="wrap" id="loading">
-  <div class="spin"></div>
-  <div class="sub">LOADING</div>
+<canvas id="stars"></canvas>
+<canvas id="sky"></canvas>
+
+<div id="invite">
+  <div class="invite-text">宝贝女儿点这里</div>
+  <button class="invite-btn" id="start-btn" type="button">✨</button>
 </div>
 
-<div class="wrap" id="wx">
-  <h1>HAPPY NEW YEAR</h1>
-  <div class="sub">X And H</div>
-  <div class="tip">
-    这个页面要用<b>摄像头</b>识别手势，<br>
-    微信内置浏览器通常拿不到摄像头权限。
-    <div class="arrow">↗</div>
-    请点右上角 <b>「…」→ 在浏览器打开</b>
+<iframe id="tree" title="照片"></iframe>
+
+<button id="music-btn" type="button" aria-label="音乐">♪</button>
+<div id="music-panel">
+  <div id="music-title">和你 · 余佳运</div>
+  <div class="row">
+    <button id="play-toggle" type="button">暂停</button>
+    <input id="volume" type="range" min="0" max="1" step="0.01" value="0.8">
   </div>
-  <a class="go" href="christmas-tree-gesture.html">仍然打开</a>
+  <div id="music-state">播放中</div>
 </div>
 
+<script src="stars.js"></script>
+<script src="fireworks.js"></script>
+<script src="preload.js"></script>
 <script>
-  (function () {
-    var ua = navigator.userAgent || '';
-    var isWeChat = /MicroMessenger/i.test(ua);
-    // 微信内置浏览器：给一个"在浏览器打开"的提示页，避免看到"手势不可用"以为坏了
-    if (isWeChat) {
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('wx').style.display = 'block';
-      return;
+(() => {
+  'use strict';
+  const FIREWORKS_DURATION = 60000;   // 烟花表演时长（毫秒），之后自然过渡到照片
+  const MUSIC_ENABLED = false;        // 先不放歌试效果；要放歌改成 true
+
+  const invite = document.getElementById('invite');
+  const sky = document.getElementById('sky');
+  const tree = document.getElementById('tree');
+  const musicBtn = document.getElementById('music-btn');
+  const panel = document.getElementById('music-panel');
+  const playToggle = document.getElementById('play-toggle');
+  const volume = document.getElementById('volume');
+  const musicState = document.getElementById('music-state');
+
+  const audio = MUSIC_ENABLED ? new Audio('assets/music/和你-余佳运.mp3') : null;
+  if (audio) {
+    window.__audio = audio;   // 供测试断言
+    audio.loop = true;
+    audio.preload = 'auto';
+    audio.volume = 0.8;
+  }
+
+  let transitionTimer = 0;
+
+  document.getElementById('start-btn').addEventListener('click', () => {
+    // 1) 邀请页淡出
+    invite.classList.add('hidden');
+    // 2) 星光增强
+    if (window.__stars && window.__stars.boost) window.__stars.boost();
+    // 3) 烟花启动（不等待任何资源）
+    if (window.__fireworks) window.__fireworks.start();
+    // 4) 音乐同步播放（用户手势内触发）
+    if (audio) audio.play().catch(() => {});
+    // 5) 音乐按钮浮现（开了音乐才显示）
+    if (MUSIC_ENABLED) musicBtn.classList.add('visible');
+    // 6) 后台并行预加载模型 + 照片
+    if (window.__preload) window.__preload.run();
+    // 7) 定时过渡到照片
+    transitionTimer = setTimeout(transitionToTree, FIREWORKS_DURATION);
+  });
+
+  function transitionToTree() {
+    sky.classList.add('fade-out');
+    // 懒加载照片树：避免页面一开始就弹摄像头授权
+    tree.src = 'tree.html';
+    tree.classList.add('fade-in');
+    setTimeout(() => { if (window.__fireworks) window.__fireworks.stop(); }, 1500);
+  }
+
+  // 音乐控制（关了音乐就不挂这些监听）
+  if (audio) {
+    musicBtn.addEventListener('click', () => panel.classList.toggle('open'));
+    function syncState() {
+      playToggle.textContent = audio.paused ? '播放' : '暂停';
+      musicState.textContent = audio.paused ? '已暂停' : '播放中';
     }
-    location.replace('christmas-tree-gesture.html');
-  })();
+    playToggle.addEventListener('click', () => {
+      if (audio.paused) audio.play().catch(() => {}); else audio.pause();
+      syncState();
+    });
+    volume.addEventListener('input', () => { audio.volume = Number(volume.value); });
+    audio.addEventListener('play', syncState);
+    audio.addEventListener('pause', syncState);
+    syncState();
+  }
+})();
 </script>
 </body>
 </html>
