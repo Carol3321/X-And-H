@@ -13,7 +13,8 @@
   canvas { position: fixed; inset: 0; display: block; width: 100vw; height: 100vh; height: 100dvh; }
   #stars { z-index: 0; }
   #sky { z-index: 1; background: transparent; touch-action: none;
-         transition: opacity 1.4s ease; }
+         opacity: 0; transition: opacity 1.1s ease; }
+  #sky.show { opacity: 1; }
   #sky.fade-out { opacity: 0; }
 
   /* 阶段一：星空邀请 */
@@ -108,7 +109,7 @@
 <script>
 (() => {
   'use strict';
-  const FIREWORKS_DURATION = 60000;   // 烟花表演时长（毫秒），之后自然过渡到照片
+  const FIREWORKS_DURATION = 30000;   // 烟花表演时长（毫秒），之后自然过渡到照片
   const MUSIC_ENABLED = false;        // 先不放歌试效果；要放歌改成 true
   const TREE_VERSION = '20261115b';  // 改了 tree.html 就改这里，强制浏览器取新版
 
@@ -131,12 +132,16 @@
 
   let transitionTimer = 0;
 
+  // 邀请页空闲时就把烟花预演算好（画布仍隐藏），点击时零卡顿
+  if (window.__fireworks) window.__fireworks.prewarm();
+
   document.getElementById('start-btn').addEventListener('click', () => {
     // 1) 邀请页淡出
     invite.classList.add('hidden');
     // 2) 星光增强
     if (window.__stars && window.__stars.boost) window.__stars.boost();
-    // 3) 烟花启动（不等待任何资源）
+    // 3) 烟花显现 + 启动（画布淡入，与邀请页淡出交叉）
+    sky.classList.add('show');
     if (window.__fireworks) window.__fireworks.start();
     // 4) 音乐同步播放（用户手势内触发）
     if (audio) audio.play().catch(() => {});
@@ -149,6 +154,7 @@
   });
 
   function transitionToTree() {
+    sky.classList.remove('show');
     sky.classList.add('fade-out');
     // 懒加载照片树：避免页面一开始就弹摄像头授权
     // 带版本号，避免浏览器 10 分钟缓存导致改动不生效

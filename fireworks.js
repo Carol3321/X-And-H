@@ -772,14 +772,21 @@
   window.addEventListener('resize', resize, { passive: true });
   if (window.visualViewport) window.visualViewport.addEventListener('resize', resize, { passive: true });
 
+  let prewarmed = false;
   window.__fireworks = {
-    start() {
-      if (running) return;
-      running = true;
+    // 在邀请页空闲时就先算好 180 帧，避免点击瞬间同步计算造成卡顿
+    prewarm() {
+      if (prewarmed) return;
+      prewarmed = true;
       lastTime = performance.now();
       resize();
       prewarm();
       for (let i = 0; i < 180; i++) update(1 / 60);
+    },
+    start() {
+      if (running) return;
+      running = true;
+      lastTime = performance.now();
       requestAnimationFrame(frame);
     },
     stop() {
